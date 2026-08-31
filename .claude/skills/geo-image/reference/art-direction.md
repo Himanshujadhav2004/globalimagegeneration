@@ -64,8 +64,10 @@ its camera clause and its people rule.
 | `still-life` | 50mm, one surface, one-side window light, used objects | none |
 | `emblem` | 100mm, seamless neutral ground, one contact shadow | none |
 
-`editorial` + `banner` reproduces the legacy news prompt **byte for byte**; a
-test asserts this against `cover-pipeline.ts` directly.
+Every profile renders at one size — 1536×640, the cover banner — and closes its
+look sentence with "Wide cinematic 21:9 banner." so the scene is composed for
+that frame. The `editorial` profile reproduces the legacy news prompt **byte for
+byte**; a test asserts this against `cover-pipeline.ts` directly.
 
 ## Per-subject planner rules
 

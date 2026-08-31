@@ -143,8 +143,8 @@ describe("generateImage (dry run)", () => {
     assert.equal(r.sceneDescription, "a lawyer leaves a courthouse at dusk");
     assert.equal(r.posterText, "CASE CLOSED");
     assert.equal(r.profile, "editorial");
-    assert.equal(r.format, "banner");
-    assert.match(r.trace, /\[qc:dry-run\] \[profile:editorial\] \[fmt:banner\]/);
+    assert.equal(r.size, "1536x640");
+    assert.match(r.trace, /\[qc:dry-run\] \[profile:editorial\]$/);
     assert.ok(r.prompt.includes("SEC (the seal)"), "unresolved factors are described in-prompt");
     assert.ok(r.prompt.includes("Using the 0 reference image(s)"));
   });
@@ -177,17 +177,17 @@ describe("generateImage (render)", () => {
 
     const r = await generateImage({
       subject: { kind: "entity", ref: "0068f0fc16034c749c991e6eabe37031" },
-      format: "square",
     });
 
     assert.equal(net.to("/images/edits").length, 1);
     assert.equal(net.to("/images/generations").length, 0);
-    assert.equal(net.to("/images/edits")[0].form!.size, "1024x1024");
+    assert.equal(net.to("/images/edits")[0].form!.size, "1536x640");
     assert.equal(r.mimeType, "image/png");
     assert.ok(r.imageBase64.length > 0);
     assert.deepEqual(r.refs, [{ name: "Ethereum", kind: "company", src: "geo-own", conf: 0.99 }]);
     assert.equal(r.profile, "emblem", "the planner's suggestion wins when nothing is pinned");
-    assert.match(r.trace, /Ethereum=geo-own:0\.99@t1 \[qc:clean@0\] \[profile:emblem\] \[fmt:square\]/);
+    assert.equal(r.size, "1536x640");
+    assert.match(r.trace, /Ethereum=geo-own:0\.99@t1 \[qc:clean@0\] \[profile:emblem\]$/);
   });
 
   it("renders without references through the generations endpoint", async () => {

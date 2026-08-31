@@ -10,7 +10,7 @@ The full guide is the skill itself:
 
 ```bash
 npm install
-npm run geo-image -- entity "Vitalik Buterin" --format square
+npm run geo-image -- entity "Vitalik Buterin"
 npm run geo-image -- property "Date of birth" --dry-run   # plan only, no spend
 npm test                                                  # 247 tests, all mocked
 npm run check:live                                        # real Geo API + IPFS
@@ -23,7 +23,7 @@ npm run check:live                                        # real Geo API + IPFS
 | `src/geo.ts` | Graph client, subject resolution, dossier building |
 | `src/planner.ts` | Per-subject visual planning prompts |
 | `src/refs.ts` | Reference hunting, download/normalisation, vision gate |
-| `src/art.ts` | Formats, render profiles, prompt assembly |
+| `src/art.ts` | Render profiles and prompt assembly |
 | `src/openai.ts` | Chat, vision and both image endpoints |
 | `src/qc.ts` | Post-render defect inspection |
 | `src/pipeline.ts` | Orchestration + the legacy `generateGroundedCover` |

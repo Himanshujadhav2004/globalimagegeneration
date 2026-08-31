@@ -26,6 +26,12 @@ export const IPFS_GATEWAYS = (): string[] =>
 
 export const BRANDFETCH_KEY = () => env("BRANDFETCH_KEY", "");
 
+// ── Render size ─────────────────────────────────────────────────────
+/** The one output shape: the editorial cover banner. */
+export const RENDER_SIZE = "1536x640";
+/** Used once if the image model rejects RENDER_SIZE; still crops to a banner. */
+export const FALLBACK_SIZE = "1536x1024";
+
 // ── Pipeline tunables (carried over from factors114 / cover-pipeline) ─
 export const MAXREF = 4;                 // reference images fed to the edits endpoint
 export const QC_RETRIES = 2;             // detect-and-regenerate passes on a glitchy render

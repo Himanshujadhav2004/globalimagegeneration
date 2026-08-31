@@ -43,7 +43,10 @@ const KIND_DESC_KW: Record<string, string[]> = {
     "laboratory", "research", "institute", "technology", "tech", "software", "ai",
     "artificial intelligence", "group", "network", "studio", "cryptocurrency", "token", "blockchain", "coin"],
   organization: ["organization", "organisation", "association", "institution", "body", "party",
-    "agency", "foundation", "nonprofit", "union"],
+    "agency", "foundation", "nonprofit", "union",
+    // Events resolve through this chain too — a Wikidata conference is
+    // described as a "conference"/"festival", never as an "organization".
+    "conference", "convention", "summit", "festival", "expo", "exhibition", "event", "fair"],
   government: ["agency", "government", "department", "ministry", "bureau", "commission", "authority",
     "central bank", "federal", "regulator", "court", "military", "cabinet", "administration"],
   place: ["building", "structure", "city", "country", "region", "headquarters", "capitol", "landmark",

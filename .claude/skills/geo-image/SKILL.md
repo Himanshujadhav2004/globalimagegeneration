@@ -1,6 +1,6 @@
 ---
 name: geo-image
-description: Generate a grounded, photorealistic image for ANY Geo knowledge-graph subject — an entity, a type, a property, a space, a relation, a news story, or a free-text brief. Use when asked to make a cover, banner, avatar, thumbnail, illustration or hero image for something in the Geo graph, or to extend the existing news-cover pipeline to non-news subjects.
+description: Generate a grounded, photorealistic image for ANY Geo knowledge-graph subject — an entity, a type, a property, a space, a relation, a news story, or a free-text brief. Use when asked to make a cover, banner, header or hero image for something in the Geo graph, or to extend the existing news-cover pipeline to non-news subjects. Always renders one shape: a 1536x640 cover banner.
 ---
 
 # geo-image
@@ -14,7 +14,7 @@ holds, while keeping the story path byte-for-byte identical.
 ## When to use
 
 - "make a cover for this entity / type / property / space"
-- "we need avatars for these people", "a banner for this space"
+- "we need cover images for these people", "a banner for this space"
 - "illustrate the relationship between X and Y"
 - extending, debugging or tuning the image pipeline itself
 
@@ -27,10 +27,10 @@ render screens, graphs, dashboards and infographics.
 npm install                                  # once
 
 npm run geo-image -- entity "Vitalik Buterin"
-npm run geo-image -- entity 0068f0fc16034c749c991e6eabe37031 --format square
+npm run geo-image -- entity 0068f0fc16034c749c991e6eabe37031 --profile portrait
 npm run geo-image -- type City --profile emblem
 npm run geo-image -- property "Date of birth" --dry-run
-npm run geo-image -- space 003eaa9b7a56fa847afd6f2e8cc518a6 --format wide
+npm run geo-image -- space 003eaa9b7a56fa847afd6f2e8cc518a6
 npm run geo-image -- relation 3f0a…                  # one edge, both endpoints
 npm run geo-image -- story --headline "SEC drops its case" --summary "…"
 npm run geo-image -- text "a rusted bicycle against a whitewashed wall"
@@ -57,10 +57,12 @@ Images land in `./out/<kind>-<slug>.png` unless `--out` says otherwise.
 Names are resolved through the graph's own search, preferring an exact,
 described match. `--space <id>` narrows a name lookup to one space.
 
-## Formats and profiles
+## One frame, five looks
 
-**Formats** set the frame: `banner` (1536×640, the news cover shape and the
-default), `wide` (1536×1024), `square` (1024×1024), `portrait` (1024×1536).
+**Every image is a cover banner, 1536×640.** There is no size option — that is
+the only shape the product uses, and the composition is planned for it rather
+than cropped into it afterwards. If the model ever rejects that size, one
+fallback render at 1536×1024 still crops to the banner ratio.
 
 **Profiles** set the look. `--profile auto` (the default) picks from the subject,
 and lets the planner override:
@@ -101,7 +103,6 @@ import { generateImage } from "./src/pipeline.js";
 
 const img = await generateImage({
   subject: { kind: "entity", ref: "Vitalik Buterin" },
-  format: "square",
   profile: "auto",
 });
 // img.imageBase64, .mimeType, .sceneDescription, .posterText, .profile, .trace
@@ -120,7 +121,8 @@ setDbImageResolver(dbImage);
 
 `generateGroundedCover(headline, summary)` is re-exported from
 `src/pipeline.js` with the identical signature and return shape, and produces a
-byte-identical prompt. In `covers.ts`, only the import changes:
+byte-identical prompt, at the same 1536×640. In `covers.ts`, only the import
+changes:
 
 ```diff
 -import { generateGroundedCover } from "../lib/cover-pipeline.js";

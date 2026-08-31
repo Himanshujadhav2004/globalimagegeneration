@@ -24,14 +24,12 @@ describe("parseArgs", () => {
     const a = parseArgs(["entity", "Vitalik", "Buterin"]);
     assert.equal(a.kind, "entity");
     assert.equal(a.ref, "Vitalik Buterin", "unquoted multi-word names still work");
-    assert.equal(a.format, "banner");
     assert.equal(a.profile, "auto");
     assert.equal(a.dryRun, false);
   });
 
   it("accepts --flag value and --flag=value", () => {
-    const a = parseArgs(["entity", ID, "--format", "square", "--profile=emblem", "--space", ID]);
-    assert.equal(a.format, "square");
+    const a = parseArgs(["entity", ID, "--profile", "emblem", "--space=" + ID]);
     assert.equal(a.profile, "emblem");
     assert.equal(a.spaceId, ID);
   });
@@ -73,14 +71,20 @@ describe("parseArgs", () => {
     assert.equal(parseArgs(["relation", "0068f0fc-1603-4c74-9c99-1e6eabe37031"]).kind, "relation");
   });
 
-  it("rejects an unknown format or profile and says what is valid", () => {
-    assert.throws(() => parseArgs(["type", "City", "--format", "panorama"]), /unknown format "panorama"/);
-    assert.throws(() => parseArgs(["type", "City", "--format", "panorama"]), /banner, wide, square, portrait/);
+  it("rejects an unknown profile and says what is valid", () => {
     assert.throws(() => parseArgs(["type", "City", "--profile", "cinematic"]), /unknown profile "cinematic"/);
+    assert.throws(() => parseArgs(["type", "City", "--profile", "cinematic"]), /editorial, portrait, landmark/);
+  });
+
+  it("rejects an unknown option instead of folding it into the subject name", () => {
+    // --format was removed; a stale script must fail loudly, not search for
+    // an entity called "City square".
+    assert.throws(() => parseArgs(["type", "City", "--format", "square"]), /unknown option "--format"/);
+    assert.throws(() => parseArgs(["type", "City", "--wibble"]), /unknown option "--wibble"/);
   });
 
   it("rejects a value flag with no value", () => {
-    assert.throws(() => parseArgs(["type", "City", "--format"]), /--format needs a value/);
+    assert.throws(() => parseArgs(["type", "City", "--profile"]), /--profile needs a value/);
   });
 
   it("keeps auto as a valid profile", () => {
@@ -137,7 +141,7 @@ describe("main", () => {
     const log = console.log;
     console.log = (s: any) => lines.push(String(s));
     try {
-      assert.equal(await main(["entity", ID, "--format", "square", "--out", out, "--json"]), 0);
+      assert.equal(await main(["entity", ID, "--out", out, "--json"]), 0);
     } finally {
       console.log = log;
       try {
@@ -146,7 +150,7 @@ describe("main", () => {
         const parsed = JSON.parse(lines.join("\n"));
         assert.equal(parsed.subject.name, "Ethereum");
         assert.equal(parsed.profile, "emblem");
-        assert.equal(parsed.format, "square");
+        assert.equal(parsed.size, "1536x640");
         assert.equal(parsed.path, out);
         assert.ok(parsed.bytes > 0);
       } finally {

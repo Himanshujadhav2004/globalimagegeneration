@@ -124,6 +124,10 @@ const KIND_RULES: Array<[RegExp, RefKind]> = [
   [/\b(token|cryptocurrency|crypto ?asset|coin|stablecoin|memecoin)\b/i, "crypto"],
   [/\b(government|agency|regulator|regulatory|ministry|department|bureau|commission|court|central bank|parliament|military)\b/i, "government"],
   [/\b(city|country|region|state|place|location|building|landmark|venue|stadium|address|territory|continent|planet)\b/i, "place"],
+  // Events before agreements: a conference whose blurb happens to mention
+  // "policy" is not a treaty. Their best reference is branding, so they follow
+  // the organization chain (logo first).
+  [/\b(event|conference|convention|summit|festival|expo|exhibition|hackathon|symposium|congress)\b/i, "organization"],
   [/\b(law|act|bill|treaty|agreement|regulation|statute|policy|accord|pact|licen[cs]e)\b/i, "agreement"],
   [/\b(company|project|protocol|startup|business|brand|corporation|exchange|nonprofit|dao|institution|university|school|team|club|publisher|studio|lab)\b/i, "company"],
   [/\b(organization|organisation|association|foundation|union|party|group|network)\b/i, "organization"],

@@ -1,5 +1,5 @@
 /**
- * art.ts — art direction: formats, render profiles and prompt assembly.
+ * art.ts — art direction: render profiles and prompt assembly.
  *
  * The news pipeline had exactly one look (a wire photograph of an event). Most
  * knowledge-graph subjects are not events, so the rules are split into blocks
@@ -17,26 +17,13 @@
 
 import { ordinal } from "./util.js";
 
-// ── Formats ─────────────────────────────────────────────────────────
-export type Format = "banner" | "wide" | "square" | "portrait";
-
-export interface FormatSpec {
-  /** Size sent to the image API. */
-  size: string;
-  /** Used once if the model rejects `size` (a model may support fewer sizes). */
-  fallback: string;
-  /** Appended to the look clause so the composition matches the frame. */
-  clause: string;
-}
-
-export const FORMATS: Record<Format, FormatSpec> = {
-  banner: { size: "1536x640", fallback: "1536x1024", clause: "Wide cinematic 21:9 banner." },
-  wide: { size: "1536x1024", fallback: "1024x1024", clause: "Wide 3:2 landscape frame." },
-  square: { size: "1024x1024", fallback: "1024x1024", clause: "Square 1:1 frame, the subject centred with even margins." },
-  portrait: { size: "1024x1536", fallback: "1024x1024", clause: "Tall 2:3 portrait frame." },
-};
-
-export const isFormat = (s: string): s is Format => Object.prototype.hasOwnProperty.call(FORMATS, s);
+// ── Frame ───────────────────────────────────────────────────────────
+/**
+ * Every image is the same shape: the editorial cover banner (see RENDER_SIZE).
+ * This clause closes the look sentence so the composition is planned for that
+ * frame rather than cropped into it afterwards.
+ */
+const FRAME_CLAUSE = "Wide cinematic 21:9 banner.";
 
 // ── Profiles ────────────────────────────────────────────────────────
 export type Profile = "editorial" | "portrait" | "landmark" | "still-life" | "emblem";
@@ -173,7 +160,7 @@ interface ProfileSpec {
   lead: (subject: string) => string;
   /** The sentence introducing the planner's composition. */
   composeLead: string;
-  /** Camera / lighting clause; the format clause is appended to it. */
+  /** Camera / lighting clause; the frame clause is appended to it. */
   look: string;
   /** Rule blocks between PROPS and the look clause. */
   people: "cast" | "none" | "distant";
@@ -280,14 +267,13 @@ export interface ComposeInput {
   refs: PromptRef[];
   described: PromptDescribed[];
   profile: Profile;
-  format: Format;
   /** Appended verbatim — the QC retry hint. */
   extra?: string;
 }
 
 /**
- * Build the full image prompt. For `editorial` + `banner` this is byte-identical
- * to the news pipeline's prompt, so existing story covers are unaffected.
+ * Build the full image prompt. For the `editorial` profile this is
+ * byte-identical to the news pipeline's prompt, so story covers are unaffected.
  */
 export function composePrompt(input: ComposeInput): string {
   const spec = SPECS[input.profile];
@@ -319,7 +305,7 @@ export function composePrompt(input: ComposeInput): string {
     TEXT_RULES,
     PROPS,
     ...peopleBlocks,
-    `${spec.look} ${FORMATS[input.format].clause}`,
+    `${spec.look} ${FRAME_CLAUSE}`,
   ].join("\n\n");
 
   body += `${spec.composeLead} ${input.composition}\n\n` + clauses;

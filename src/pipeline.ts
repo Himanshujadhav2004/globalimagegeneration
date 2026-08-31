@@ -7,17 +7,14 @@
  *               look (planner.ts).
  *   3. REFS     hunt a real photo/logo/mark for each factor, gating each
  *               candidate; anything unfound is described in-prompt (refs.ts).
- *   4. RENDER   edits (with refs) or generations (without), at the chosen
- *               format (openai.ts).
+ *   4. RENDER   edits (with refs) or generations (without), at the one cover
+ *               size (openai.ts).
  *   5. QC       inspect for sharp-but-wrong text and malformed hands; on a
  *               defect, re-render feeding the SPECIFIC defect back in.
  */
 
-import { MAXREF, QC_RETRIES } from "./config.js";
-import {
-  composePrompt, defaultProfile, FORMATS, retryHint,
-  type Format, type Profile,
-} from "./art.js";
+import { FALLBACK_SIZE, MAXREF, QC_RETRIES, RENDER_SIZE } from "./config.js";
+import { composePrompt, defaultProfile, retryHint, type Profile } from "./art.js";
 import { resolveSubject, type Dossier, type SubjectRef } from "./geo.js";
 import { imageEdit, imageGenerate } from "./openai.js";
 import { plan as planSubject, type Plan, type PlanFactor } from "./planner.js";
@@ -27,8 +24,6 @@ import { resolveRefs, type Factor, type ResolvedRef } from "./refs.js";
 // ── Public shape ────────────────────────────────────────────────────
 export interface GenerateOptions {
   subject: SubjectRef;
-  /** Frame shape. Default "banner" (the news cover shape). */
-  format?: Format;
   /** Pin a look, or "auto" to let the subject and the planner choose. */
   profile?: Profile | "auto";
   plannerModel?: string;
@@ -49,7 +44,8 @@ export interface GeneratedImage {
   /** Optional short overlay caption the planner proposed ("" if none). */
   posterText: string;
   profile: Profile;
-  format: Format;
+  /** Always RENDER_SIZE — kept in the result so logs record what was asked for. */
+  size: string;
   subject: { kind: string; id?: string; name: string };
   /** The exact prompt sent to the image model. */
   prompt: string;
@@ -115,7 +111,6 @@ function fallbackFactors(dossier: Dossier): PlanFactor[] {
 /** Generate one image for any Geo subject. Throws on an unrenderable subject. */
 export async function generateImage(opts: GenerateOptions): Promise<GeneratedImage> {
   const stage = opts.onStage ?? (() => {});
-  const format: Format = opts.format ?? "banner";
 
   stage("resolve", `${opts.subject.kind}: ${opts.subject.ref ?? opts.subject.headline ?? opts.subject.text ?? ""}`);
   const dossier = await resolveSubject(opts.subject);
@@ -147,14 +142,13 @@ export async function generateImage(opts: GenerateOptions): Promise<GeneratedIma
     refs: refs.map((r) => ({ name: r.name, role: r.role, kind: r.kind })),
     described,
     profile,
-    format,
   };
 
   const summary = {
     sceneDescription: plan.composition || dossier.name,
     posterText: plan.posterText,
     profile,
-    format,
+    size: RENDER_SIZE,
     subject: { kind: dossier.subject, id: dossier.id, name: dossier.name },
     dossier,
     plan,
@@ -169,12 +163,11 @@ export async function generateImage(opts: GenerateOptions): Promise<GeneratedIma
       imageBase64: "",
       mimeType: "",
       prompt,
-      trace: `${scores.join(" ")} [qc:dry-run] [profile:${profile}] [fmt:${format}]`,
+      trace: `${scores.join(" ")} [qc:dry-run] [profile:${profile}]`,
     };
   }
 
   // ── render + QC ──
-  const spec = FORMATS[format];
   let data: Buffer | null = null;
   let prompt = "";
   let qc = "";
@@ -182,10 +175,10 @@ export async function generateImage(opts: GenerateOptions): Promise<GeneratedIma
 
   for (let attempt = 0; attempt <= QC_RETRIES; attempt++) {
     prompt = composePrompt({ ...base, extra: attempt && lastReason ? retryHint(lastReason) : "" });
-    stage("render", `attempt ${attempt + 1}, ${refs.length} ref(s), ${spec.size}`);
+    stage("render", `attempt ${attempt + 1}, ${refs.length} ref(s), ${RENDER_SIZE}`);
     data = refs.length
-      ? await imageEdit(prompt, refs.map((r) => ({ buf: r.buf, mime: r.mime })), spec.size, spec.fallback)
-      : await imageGenerate(prompt, spec.size, spec.fallback);
+      ? await imageEdit(prompt, refs.map((r) => ({ buf: r.buf, mime: r.mime })), RENDER_SIZE, FALLBACK_SIZE)
+      : await imageGenerate(prompt, RENDER_SIZE, FALLBACK_SIZE);
 
     const { bad, reason } = await qcInspect(data, profile);
     if (!bad) {
@@ -204,7 +197,7 @@ export async function generateImage(opts: GenerateOptions): Promise<GeneratedIma
     imageBase64: data.toString("base64"),
     mimeType,
     prompt,
-    trace: `${scores.join(" ")} [qc:${qc}] [profile:${profile}] [fmt:${format}]`,
+    trace: `${scores.join(" ")} [qc:${qc}] [profile:${profile}]`,
   };
 }
 
@@ -224,7 +217,6 @@ export interface GroundedCover {
 export async function generateGroundedCover(headline: string, summary: string): Promise<GroundedCover> {
   const r = await generateImage({
     subject: { kind: "story", headline, summary },
-    format: "banner",
     profile: "editorial",
   });
   return {

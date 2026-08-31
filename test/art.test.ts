@@ -1,10 +1,11 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
-  AGREEMENT_REF_LINE, ENTITY_REF_LINE, PERSON_REF_LINE, FORMATS, PROFILES,
-  composePrompt, defaultProfile, expectsPeople, isFormat, isProfile, refLineFor, retryHint,
-  type Format, type Profile,
+  AGREEMENT_REF_LINE, ENTITY_REF_LINE, PERSON_REF_LINE, PROFILES,
+  composePrompt, defaultProfile, expectsPeople, isProfile, refLineFor, retryHint,
+  type Profile,
 } from "../src/art.js";
+import { FALLBACK_SIZE, RENDER_SIZE } from "../src/config.js";
 import { hasLegacy, legacyConst } from "./helpers/legacy.js";
 
 const base = {
@@ -13,33 +14,19 @@ const base = {
   refs: [] as Array<{ name: string; role: string; kind: string }>,
   described: [] as Array<{ name: string; role: string }>,
   profile: "editorial" as Profile,
-  format: "banner" as Format,
 };
 
-// ── formats ─────────────────────────────────────────────────────────
-describe("formats", () => {
-  it("gives every format a size, a fallback and a frame clause", () => {
-    for (const [name, spec] of Object.entries(FORMATS)) {
-      assert.match(spec.size, /^\d+x\d+$/, `${name} size`);
-      assert.match(spec.fallback, /^\d+x\d+$/, `${name} fallback`);
-      assert.ok(spec.clause.length > 8, `${name} clause`);
-    }
+// ── frame ──────────────────────────────────────────────────────────
+describe("frame", () => {
+  it("renders one shape only: the cover banner", () => {
+    assert.equal(RENDER_SIZE, "1536x640");
+    assert.match(FALLBACK_SIZE, /^\d+x\d+$/);
+    assert.notEqual(FALLBACK_SIZE, RENDER_SIZE, "a fallback equal to the size would never help");
   });
 
-  it("keeps banner at the news cover size", () => {
-    assert.equal(FORMATS.banner.size, "1536x640");
-  });
-
-  it("validates format names", () => {
-    assert.equal(isFormat("square"), true);
-    assert.equal(isFormat("panorama"), false);
-    assert.equal(isFormat("toString"), false, "prototype keys are not formats");
-  });
-
-  it("puts the frame clause into the prompt", () => {
-    for (const format of Object.keys(FORMATS) as Format[]) {
-      const p = composePrompt({ ...base, format });
-      assert.ok(p.includes(FORMATS[format].clause), `${format} clause missing`);
+  it("tells the model the frame in every profile", () => {
+    for (const profile of PROFILES) {
+      assert.ok(composePrompt({ ...base, profile }).includes("Wide cinematic 21:9 banner."), profile);
     }
   });
 });
@@ -195,7 +182,7 @@ describe("retryHint", () => {
 });
 
 // ── regression guard against the validated news prompt ──────────────
-describe("editorial/banner reproduces the legacy news prompt", { skip: !hasLegacy() }, () => {
+describe("the editorial profile reproduces the legacy news prompt", { skip: !hasLegacy() }, () => {
   it("keeps the reference lines byte-identical", () => {
     assert.equal(PERSON_REF_LINE, legacyConst("PERSON_REF_LINE"));
     assert.equal(AGREEMENT_REF_LINE, legacyConst("AGREEMENT_REF_LINE"));
@@ -205,8 +192,8 @@ describe("editorial/banner reproduces the legacy news prompt", { skip: !hasLegac
   it("keeps the static clause block byte-identical", () => {
     const legacy = legacyConst("STATIC_CLAUSES");
     assert.ok(legacy, "could not read STATIC_CLAUSES from cover-pipeline.ts");
-    const prompt = composePrompt({ ...base, profile: "editorial", format: "banner" });
-    assert.ok(prompt.endsWith(legacy!), "editorial/banner no longer ends with the legacy clause block");
+    const prompt = composePrompt({ ...base, profile: "editorial" });
+    assert.ok(prompt.endsWith(legacy!), "the editorial profile no longer ends with the legacy clause block");
   });
 
   it("produces the whole legacy prompt for a story", () => {
@@ -228,7 +215,7 @@ describe("editorial/banner reproduces the legacy news prompt", { skip: !hasLegac
       legacyStatic;
 
     const actual = composePrompt({
-      subject: headline, composition: comp, refs, described, profile: "editorial", format: "banner",
+      subject: headline, composition: comp, refs, described, profile: "editorial",
     });
     assert.equal(actual, expected);
   });

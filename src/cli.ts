@@ -3,10 +3,10 @@
  * cli.ts — `geo-image <kind> <ref> [options]`
  *
  *   geo-image entity "Vitalik Buterin"
- *   geo-image entity 0068f0fc16034c749c991e6eabe37031 --format square
+ *   geo-image entity 0068f0fc16034c749c991e6eabe37031 --profile portrait
  *   geo-image type City --profile emblem
  *   geo-image property "Date of birth" --dry-run
- *   geo-image space fae5c35a91712b2cae3dd5028d3aba3f --format wide
+ *   geo-image space fae5c35a91712b2cae3dd5028d3aba3f
  *   geo-image relation <relation-id>
  *   geo-image story --headline "…" --summary "…"
  *   geo-image text "a rusted bicycle against a whitewashed wall"
@@ -14,7 +14,8 @@
 
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { FORMATS, PROFILES, isFormat, isProfile, type Format, type Profile } from "./art.js";
+import { PROFILES, isProfile, type Profile } from "./art.js";
+import { RENDER_SIZE } from "./config.js";
 import { generateImage } from "./pipeline.js";
 import type { SubjectKind } from "./geo.js";
 import { slugify } from "./util.js";
@@ -37,7 +38,6 @@ KINDS
   text <brief>         a free-text brief
 
 OPTIONS
-  --format <f>      ${Object.keys(FORMATS).join(" | ")}            (default banner)
   --profile <p>     auto | ${PROFILES.join(" | ")}   (default auto)
   --space <id>      restrict a name lookup to one space
   --headline <s>    story headline
@@ -55,7 +55,6 @@ OPTIONS
 export interface CliArgs {
   kind: SubjectKind;
   ref: string;
-  format: Format;
   profile: Profile | "auto";
   spaceId?: string;
   headline?: string;
@@ -71,7 +70,11 @@ export interface CliArgs {
 export class UsageError extends Error {}
 
 const FLAGS_WITH_VALUE = new Set([
-  "--format", "--profile", "--space", "--headline", "--summary", "--out", "--model",
+  "--profile", "--space", "--headline", "--summary", "--out", "--model",
+]);
+
+const BOOLEAN_FLAGS = new Set([
+  "--dry-run", "--with-refs", "--print-prompt", "--json", "--help",
 ]);
 
 /** Parse argv (without node/script). Throws UsageError with a readable reason. */
@@ -92,8 +95,12 @@ export function parseArgs(argv: string[]): CliArgs {
       const value = eq === -1 ? argv[++i] : a.slice(eq + 1);
       if (value === undefined) throw new UsageError(`${name} needs a value`);
       opt[name] = value;
-    } else {
+    } else if (BOOLEAN_FLAGS.has(name)) {
       bool.add(name);
+    } else {
+      // Silently ignoring this would fold the flag's value into the subject
+      // name — a stale `--format square` would go looking for "City square".
+      throw new UsageError(`unknown option "${name}"`);
     }
   }
 
@@ -114,10 +121,6 @@ export function parseArgs(argv: string[]): CliArgs {
     throw new UsageError(`${kind} needs an id (32-hex or dashed UUID), got "${ref}"`);
   }
 
-  const format = opt["--format"] ?? "banner";
-  if (!isFormat(format)) {
-    throw new UsageError(`unknown format "${format}" — expected: ${Object.keys(FORMATS).join(", ")}`);
-  }
   const profile = opt["--profile"] ?? "auto";
   if (profile !== "auto" && !isProfile(profile)) {
     throw new UsageError(`unknown profile "${profile}" — expected: auto, ${PROFILES.join(", ")}`);
@@ -126,7 +129,6 @@ export function parseArgs(argv: string[]): CliArgs {
   return {
     kind,
     ref,
-    format,
     profile: profile as Profile | "auto",
     spaceId: opt["--space"],
     headline,
@@ -165,7 +167,6 @@ export async function main(argv: string[]): Promise<number> {
       summary: args.summary,
       text: args.ref,
     },
-    format: args.format,
     profile: args.profile,
     plannerModel: args.model,
     dryRun: args.dryRun,
@@ -191,7 +192,7 @@ export async function main(argv: string[]): Promise<number> {
     console.log(JSON.stringify({
       subject: result.subject,
       profile: result.profile,
-      format: result.format,
+      size: result.size,
       sceneDescription: result.sceneDescription,
       posterText: result.posterText,
       refs: result.refs,
@@ -202,7 +203,7 @@ export async function main(argv: string[]): Promise<number> {
     }, null, 2));
   } else {
     console.log(`\n  ${result.subject.kind}: ${result.subject.name}`);
-    console.log(`  profile: ${result.profile}   format: ${result.format} (${FORMATS[result.format].size})`);
+    console.log(`  profile: ${result.profile}   size: ${RENDER_SIZE}`);
     console.log(`  scene:   ${result.sceneDescription}`);
     if (result.posterText) console.log(`  poster:  ${result.posterText}`);
     console.log(`  trace:   ${result.trace}`);

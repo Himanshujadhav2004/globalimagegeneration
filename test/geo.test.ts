@@ -122,6 +122,23 @@ describe("inferRefKind", () => {
     assert.equal(inferRefKind([]), "object");
   });
 
+  it("routes an event by its type, not by a stray word in its blurb", () => {
+    // Two AI conferences must resolve the same way. Before the `event` rule,
+    // "policy" in the description made one of them an `agreement`.
+    const wsai = inferRefKind(["Event"], "World Summit AI Amsterdam",
+      "One of the largest global AI business events across enterprise startups and policy");
+    const superai = inferRefKind(["Event"], "SuperAI",
+      "High-profile global AI event bringing together founders investors and frontier AI builders");
+    assert.equal(wsai, "organization");
+    assert.equal(superai, "organization");
+    assert.equal(wsai, superai, "two conferences must not get different chains");
+  });
+
+  it("still treats a real act as an agreement", () => {
+    assert.equal(inferRefKind(["Bill"], "CLARITY Act", "A US market-structure bill"), "agreement");
+    assert.equal(inferRefKind([], "USMCA", "A trade agreement"), "agreement");
+  });
+
   it("does not match inside a longer word", () => {
     // "actor" must not fire on "refactoring", "act" must not fire on "action"
     assert.equal(inferRefKind(["Refactoring"], "", ""), "object");
