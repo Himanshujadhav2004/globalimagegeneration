@@ -1,0 +1,21 @@
+{
+  "name": "geo-image-skill",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Grounded image generation for any Geo knowledge-graph subject — entity, property, type, space, relation or news story.",
+  "scripts": {
+    "geo-image": "tsx src/cli.ts",
+    "test": "tsx --test --test-reporter=spec \"test/**/*.test.ts\"",
+    "check:live": "tsx scripts/live-check.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  },
+  "optionalDependencies": {
+    "sharp": "^0.33.5"
+  }
+}
