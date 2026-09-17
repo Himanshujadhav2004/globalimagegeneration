@@ -52,7 +52,15 @@ export const dataUrl = (buf: Buffer, mime: string): string =>
 /** Reasoning-family models bill hidden reasoning against the completion budget. */
 const isReasoningModel = (model: string): boolean => /^(gpt-5|o[1-9])/i.test(model);
 
-const retryableStatus = (s: number): boolean => s === 408 || s === 409 || s === 429 || s >= 500;
+/**
+ * 404 is in here deliberately. The endpoint URLs are hardcoded and correct, so
+ * a 404 from them is edge noise, not a missing route — three of ten renders in
+ * one batch died on a spurious `HTTP 404:` with an empty body, and every one of
+ * them succeeded on a plain retry. A genuinely wrong OPENAI_BASE_URL still
+ * fails, just after the retry budget instead of immediately.
+ */
+const retryableStatus = (s: number): boolean =>
+  s === 404 || s === 408 || s === 409 || s === 429 || s >= 500;
 
 /**
  * A 429 is usually rate limiting — but "no credits" and "quota exceeded" also
