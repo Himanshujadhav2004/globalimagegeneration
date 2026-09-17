@@ -94,7 +94,15 @@ outright, and QC checks hands only where people are expected.
    hands; on a defect, re-render feeding that **specific** defect back in, twice.
 
 Reference priority: the entity's own graph image (0.99) → the host app's entity
-DB → Brandfetch / CoinGecko → Wikidata → Wikipedia → Commons.
+DB → Brandfetch / CoinGecko → Wikidata → Wikipedia → Firecrawl → Commons.
+
+For **people** the chain is `geo-own → db → geo name search → Wikipedia →
+Firecrawl → Commons`. Firecrawl searches the name **plus the subject's Geo
+description** — a bare name finds whoever is most famous, the description finds
+the person the graph means. It returns several candidates, because the top hit
+is often hotlink-protected and the list reliably contains strangers who share
+the name; the vision gate checks each against the dossier and keeps the first
+that can actually be them.
 
 ## As a library
 
@@ -143,6 +151,7 @@ guarantee survives edits to either file.
 | `GEO_GRAPHQL_URL` | testnet geobrowser | Graph endpoint |
 | `IPFS_GATEWAYS` | ipfs.io, dweb.link, pinata | Tried in order for own images |
 | `BRANDFETCH_KEY` | — | Optional extra company-logo source |
+| `FIRECRAWL_API_KEY` | — | Optional open-web image search; the only source that finds a face Wikipedia has no portrait for |
 | `GEO_IMAGE_NO_SHARP` | — | `1` forces the no-sharp paths |
 
 `sharp` is an **optional** dependency: without it, SVG and GIF references are

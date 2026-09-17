@@ -12,7 +12,7 @@
  *     reach the render call.
  *
  * Source chains (first candidate that passes the vision gate wins):
- *   person     -> geo-own -> db? -> geo name search -> Wikipedia -> Commons
+ *   person     -> geo-own -> db? -> geo name search -> Wikipedia -> Firecrawl? -> Commons
  *   crypto     -> geo-own -> db? -> CoinGecko -> Wikidata -> Commons
  *   company    -> geo-own -> db? -> Brandfetch? -> Wikidata -> Commons -> Wikipedia
  *   gov/place/agreement/organization/object -> geo-own -> Wikidata -> Wikipedia -> Commons
@@ -24,6 +24,7 @@ import {
   MAX_REF_TRIES, MAX_REF_TRIES_PERSON, USER_AGENT, noSharp,
 } from "./config.js";
 import { chatCompletion, dataUrl, VISION_MODEL } from "./openai.js";
+import { firecrawlImages } from "./firecrawl.js";
 import { uniqueBy } from "./util.js";
 
 export { ENTITY_MIN_CONF };
@@ -248,7 +249,16 @@ export interface ResolveOptions {
   domain?: string;
   /** Gateway URLs for the factor's OWN image in the graph; tried first. */
   ownImageUrls?: string[];
+  /**
+   * What the graph says about this factor. Disambiguates a web search — a bare
+   * name finds whoever is most famous, the name plus the description finds the
+   * person the graph actually means.
+   */
+  context?: string;
 }
+
+/** A source yields one URL, or several when it is a search that ranks results. */
+type SourceFn = () => Promise<string | string[] | null>;
 
 /**
  * Lazily yield (url, src, conf) reference candidates in priority order — the
@@ -266,14 +276,20 @@ export async function* resolveCandidates(
 
   const q = (refQuery || name).trim();
   const domain = opts.domain ?? "";
+  const context = opts.context ?? "";
   const db = dbImageResolver;
-  let chain: Array<[string, () => Promise<string | null>]>;
+  let chain: Array<[string, SourceFn]>;
 
   if (kind === "person") {
+    // Wikipedia keeps priority — it went 4/4 in the evaluation — and Firecrawl
+    // picks up everyone Wikipedia has no portrait for. Commons is last because
+    // it matches on filename alone: it is what returned a photograph of a robin
+    // for "Robin May" and a different man for "Robert Turner".
     chain = [
       ["db", () => (db ? db(name, "person") : Promise.resolve(null))],
       ["geo", () => geoResolveAvatarByName(name)],
       ["wikipedia", () => wikiImageUrl(name)],
+      ["firecrawl", () => firecrawlImages(name, context)],
       ["commons", () => commonsImageUrl(name)],
     ];
   } else if (kind === "crypto") {
@@ -303,13 +319,17 @@ export async function* resolveCandidates(
   }
 
   for (const [src, fn] of chain) {
-    let u: string | null = null;
+    let got: string | string[] | null = null;
     try {
-      u = await fn();
+      got = await fn();
     } catch {
-      u = null;
+      got = null;
     }
-    if (u) yield { url: u, src, conf: CONF[src] ?? 0.5 };
+    // A ranked search returns several: yield each, best first, so the gate can
+    // walk past a hotlink-blocked top hit or a stranger who shares the name.
+    for (const url of (Array.isArray(got) ? got : [got]).filter((u): u is string => !!u)) {
+      yield { url, src, conf: CONF[src] ?? 0.5 };
+    }
   }
 }
 
@@ -418,24 +438,50 @@ export async function download(url: string): Promise<RefImage | null> {
   return downsize({ buf: d, mime });
 }
 
-// ── Reference gate (LENIENT; applied to EVERY source incl. geo-own) ─
+// ── Reference gate (applied to EVERY source incl. geo-own) ──────────
 export interface GateResult {
   ok: boolean;
   reason: string;
 }
 
 /**
- * Validate ONE fetched entity ref by LOOKING at it. Lenient: reject ONLY a
- * clearly-wrong ref so the loop can try another candidate. Person refs must be a
- * REAL (non-stylized) face. Fail-OPEN (keep) on any API error so a transient
- * blip never drops a good ref.
+ * Validate ONE fetched ref by LOOKING at it, so the loop can try another
+ * candidate when it is wrong. Fail-OPEN on any API error, so a transient blip
+ * never drops a good ref.
+ *
+ * NON-PEOPLE stay lenient: a slightly-off logo is cosmetic.
+ *
+ * PEOPLE are checked on IDENTITY, using `context` (their Geo description). A
+ * web image search ranks well but does not understand identity — searching
+ * "Robert Turner" also surfaces a software engineer, a law professor and a
+ * media mogul. Asking only "is this a real face?" accepts all of them, and a
+ * photograph of a DIFFERENT real person captioned with this person's name is
+ * the worst thing this pipeline can emit.
  */
-export async function refGate(buf: Buffer, mime: string, name: string, kind: string): Promise<GateResult> {
+export async function refGate(
+  buf: Buffer, mime: string, name: string, kind: string, context = "",
+): Promise<GateResult> {
+  const person =
+    `You are checking whether a photograph can be used as the likeness of one specific real person.\n\n` +
+    `PERSON: ${name}\n` +
+    (context ? `WHO THEY ARE: ${context}\n` : "") +
+    `\nReply one word, YES or NO.\n` +
+    `Answer NO if ANY of these hold:\n` +
+    `- it is not a real photograph of a real human face — a cartoon, anime, illustration, drawing, ` +
+    `painting, 3D render, avatar, emoji, statue, logo, product, animal, or a scene with no clear face;\n` +
+    `- it is a screenshot, a page banner, a book cover or a group shot with no single clear subject;\n` +
+    `- it is plainly a DIFFERENT person who happens to share the name. Judge only from what you can ` +
+    `see against the description: the era the photograph was taken (an obviously nineteenth- or ` +
+    `early-twentieth-century portrait cannot be someone working today), the subject's apparent age ` +
+    `against the life described, or dress, uniform or setting belonging to another era or another ` +
+    `walk of life entirely;\n` +
+    `- you positively recognise the person shown as somebody else.\n` +
+    `Answer YES for a real photograph of one person that could genuinely be them. Do not infer from ` +
+    `the name alone, and do not judge by ethnicity or appearance beyond what the description states. ` +
+    `If it shows an ordinary adult and nothing contradicts the description, answer YES.`;
+
   const q = kind === "person"
-    ? `Is this a REAL photograph of a real human person's face, usable as a likeness reference for ` +
-      `'${name}'? Reply one word, YES or NO. Answer NO ONLY if it is a cartoon, anime, illustration, ` +
-      `drawing, painting, 3D render, avatar or emoji, OR a logo / object / scene with no clear human ` +
-      `face. Answer YES for any real photograph of a plausible real person.`
+    ? person
     : `This image is a reference for a news graphic about '${name}'. Reply one word, YES or NO. Answer ` +
       `NO ONLY if it is clearly UNUSABLE — a website screenshot, a stock chart / graph / infographic, ` +
       `a watermarked stock thumbnail, or obviously a DIFFERENT unrelated thing. Any logo, seal, flag, ` +
@@ -448,7 +494,7 @@ export async function refGate(buf: Buffer, mime: string, name: string, kind: str
       messages: [{ role: "user", content: [{ type: "text", text: q }, { type: "image_url", image_url: { url: dataUrl(buf, mime) } }] }],
     })).trim().toLowerCase();
     const ok = ans.startsWith("y");
-    return { ok, reason: ok ? "ok" : kind === "person" ? "not-real-face" : "wrong-ref" };
+    return { ok, reason: ok ? "ok" : kind === "person" ? "not-this-person" : "wrong-ref" };
   } catch {
     return { ok: true, reason: "gate-error" }; // fail-OPEN
   }
@@ -462,6 +508,8 @@ export interface Factor {
   refQuery?: string;
   domain?: string;
   ownImageUrls?: string[];
+  /** What the graph says about this factor — the person gate checks against it. */
+  context?: string;
 }
 
 export interface ResolvedRef extends RefImage {
@@ -502,14 +550,14 @@ export async function resolveRefs(factors: Factor[]): Promise<ResolveResult> {
     if (refs.length < MAXREF) {
       const cap = kind === "person" ? MAX_REF_TRIES_PERSON : MAX_REF_TRIES;
       for await (const cand of resolveCandidates(kind, name, f.refQuery ?? "", {
-        domain: f.domain ?? "", ownImageUrls: f.ownImageUrls ?? [],
+        domain: f.domain ?? "", ownImageUrls: f.ownImageUrls ?? [], context: f.context ?? "",
       })) {
         if (cand.conf < ENTITY_MIN_CONF) continue;
         if (tries >= cap) break; // depth cap -> describe
         const img = await download(cand.url);
         if (!img) continue; // dead URL / not an image -> next source (no try burned)
         tries++;
-        const g = await refGate(img.buf, img.mime, name, kind); // LENIENT
+        const g = await refGate(img.buf, img.mime, name, kind, f.context ?? "");
         gateReason = g.reason;
         if (g.ok) {
           got = img;
