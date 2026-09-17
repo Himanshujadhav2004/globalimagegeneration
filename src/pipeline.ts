@@ -69,6 +69,7 @@ const norm = (s: string): string =>
  * subject" for subjects that ARE a single entity.
  */
 export function attachOwnImages(factors: PlanFactor[], dossier: Dossier): Factor[] {
+  const subject = norm(dossier.name);
   const out: Factor[] = factors.map((f) => ({
     name: f.name,
     kind: f.kind,
@@ -76,6 +77,10 @@ export function attachOwnImages(factors: PlanFactor[], dossier: Dossier): Factor
     refQuery: f.refQuery,
     domain: f.domain,
     ownImageUrls: [] as string[],
+    // The subject's dossier travels with its factor: it disambiguates the web
+    // search ("Robert Turner" alone finds a media mogul) and gives the gate
+    // something to check a candidate face against.
+    context: norm(f.name) === subject ? dossier.description : "",
   }));
 
   for (const own of dossier.ownImages) {

@@ -26,6 +26,12 @@ export const IPFS_GATEWAYS = (): string[] =>
 
 export const BRANDFETCH_KEY = () => env("BRANDFETCH_KEY", "");
 
+/**
+ * Optional web image search — the only source that reaches past Wikipedia for
+ * people. Accepts either env name; Firecrawl's own docs use both.
+ */
+export const FIRECRAWL_KEY = () => env("FIRECRAWL_KEY", "") || env("FIRECRAWL_API_KEY", "");
+
 // ── Render size ─────────────────────────────────────────────────────
 /** The one output shape: the editorial cover banner. */
 export const RENDER_SIZE = "1536x640";
@@ -36,7 +42,7 @@ export const FALLBACK_SIZE = "1536x1024";
 export const MAXREF = 4;                 // reference images fed to the edits endpoint
 export const QC_RETRIES = 2;             // detect-and-regenerate passes on a glitchy render
 export const MAX_REF_TRIES = 2;          // candidates gated per factor before describing
-export const MAX_REF_TRIES_PERSON = 4;   // people: dig past bad avatars to a real photo
+export const MAX_REF_TRIES_PERSON = 6;   // people: dig past bad avatars, 403s and same-name strangers
 export const MAX_FACTORS = 6;            // planner factors honoured per subject
 export const ENTITY_MIN_CONF = 0.7;      // reject a source below this trust score
 export const MAXPX = 2000;               // downsize refs before the edits endpoint
@@ -50,6 +56,7 @@ export const CONF: Record<string, number> = {
   db: 0.96,
   wikidata: 0.95,
   wikipedia: 0.88,
+  firecrawl: 0.85, // open-web image search — good ranking, but strangers share names
   commons: 0.8,
 };
 

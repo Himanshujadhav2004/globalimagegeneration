@@ -260,3 +260,32 @@ describe("imageEdit", () => {
     await assert.rejects(() => imageEdit("p", refs, "1024x1024", undefined, 1), /socket hang up/);
   });
 });
+
+// ── transient 404s (observed: 3 of 10 renders in one batch) ─────────
+describe("spurious 404s", () => {
+  const msg = [{ role: "user" as const, content: "hi" }];
+
+  it("retries a 404 on chat rather than failing the whole render", async () => {
+    let n = 0;
+    net = mockFetch(() => (++n === 1 ? errorRes(404, "") : chatRes("recovered")));
+    assert.equal(await chatCompletion({ model: "gpt-4.1-mini", messages: msg }), "recovered");
+    assert.equal(n, 2);
+  });
+
+  it("retries a 404 on the image endpoints", async () => {
+    let n = 0;
+    net = mockFetch(() => (++n === 1 ? errorRes(404, "") : imageRes()));
+    assert.ok((await imageGenerate("p", "1536x640")).length > 0);
+
+    net.restore();
+    n = 0;
+    net = mockFetch(() => (++n === 1 ? errorRes(404, "") : imageRes()));
+    assert.ok((await imageEdit("p", [], "1536x640")).length > 0);
+  });
+
+  it("still gives up on a persistently wrong endpoint", async () => {
+    net = mockFetch(() => errorRes(404, "no such route"));
+    await assert.rejects(() => chatCompletion({ model: "gpt-4.1-mini", messages: msg, retries: 1 }), /HTTP 404/);
+    assert.equal(net.calls.length, 2, "retried once, then surfaced it");
+  });
+});

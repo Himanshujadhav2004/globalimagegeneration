@@ -4,7 +4,7 @@ import {
   download, isMarkup, isSvg, refGate, resetSharpCache, resolveCandidates, resolveRefs,
   setDbImageResolver, sniff, ENTITY_MIN_CONF,
 } from "../src/refs.js";
-import { CONF } from "../src/config.js";
+import { CONF, MAX_REF_TRIES_PERSON } from "../src/config.js";
 import {
   bytesRes, chatRes, errorRes, GIF_BYTES, HTML_BYTES, JPEG_BYTES, jsonRes, mockFetch,
   PNG_BYTES, SVG_BYTES, textRes, WEBP_BYTES, type MockHandle,
@@ -290,7 +290,7 @@ describe("refGate", () => {
 
   it("names the reason for a rejection by kind", async () => {
     net = mockFetch(() => chatRes("NO"));
-    assert.equal((await refGate(PNG_BYTES, "image/png", "VB", "person")).reason, "not-real-face");
+    assert.equal((await refGate(PNG_BYTES, "image/png", "VB", "person")).reason, "not-this-person");
     assert.equal((await refGate(PNG_BYTES, "image/png", "SEC", "government")).reason, "wrong-ref");
   });
 
@@ -298,7 +298,7 @@ describe("refGate", () => {
     net = mockFetch(() => chatRes("YES"));
     await refGate(PNG_BYTES, "image/png", "VB", "person");
     await refGate(PNG_BYTES, "image/png", "SEC", "government");
-    assert.match(net.calls[0].json.messages[0].content[0].text, /REAL photograph of a real human person/);
+    assert.match(net.calls[0].json.messages[0].content[0].text, /likeness of one specific real person/);
     assert.match(net.calls[1].json.messages[0].content[0].text, /clearly UNUSABLE/);
     assert.match(net.calls[0].json.messages[0].content[1].image_url.url, /^data:image\/png;base64,/);
   });
@@ -354,17 +354,20 @@ describe("resolveRefs", () => {
     assert.match(out.scores[0], /@t2$/);
   });
 
-  it("gives a person four tries and everything else two", async () => {
-    const urls = ["1", "2", "3", "4", "5", "6"].map((n) => `https://g${n}/cid`);
+  it("gives a person six tries and everything else two", async () => {
+    // People are worth digging for: the chain is long, a ranked search yields
+    // several candidates, and hotlink-blocked hits are common.
+    const urls = ["1", "2", "3", "4", "5", "6", "7", "8"].map((n) => `https://g${n}/cid`);
     net = refNet(["NO"], () => bytesRes(PNG_BYTES, "image/png"));
     const person = await resolveRefs([factor({ ownImageUrls: urls })]);
-    assert.equal(net.to("openai.com").length, 4, "people are worth digging for");
+    assert.equal(net.to("openai.com").length, MAX_REF_TRIES_PERSON);
+    assert.equal(MAX_REF_TRIES_PERSON, 6);
 
     net.restore();
     net = refNet(["NO"], () => bytesRes(PNG_BYTES, "image/png"));
     await resolveRefs([factor({ kind: "company", name: "ACME", ownImageUrls: urls })]);
     assert.equal(net.to("openai.com").length, 2);
-    assert.match(person.scores[0], /describe\(⊘not-real-face\)/);
+    assert.match(person.scores[0], /describe\(⊘not-this-person\)/);
   });
 
   it("describes a factor whose references all fail", async () => {
@@ -372,7 +375,7 @@ describe("resolveRefs", () => {
     const out = await resolveRefs([factor({ ownImageUrls: ["https://g1/a"] })]);
     assert.deepEqual(out.refs, []);
     assert.deepEqual(out.described, [{ name: "Vitalik Buterin", role: "at the lectern" }]);
-    assert.match(out.scores[0], /describe\(⊘not-real-face\)/);
+    assert.match(out.scores[0], /describe\(⊘not-this-person\)/);
   });
 
   it("describes a factor that has no candidates at all", async () => {
@@ -400,5 +403,110 @@ describe("resolveRefs", () => {
   it("returns nothing at all for no factors", async () => {
     net = refNet(["YES"], () => errorRes(404));
     assert.deepEqual(await resolveRefs([]), { refs: [], described: [], scores: [] });
+  });
+});
+
+// ── person identity: Firecrawl + the identity gate ──────────────────
+describe("person chain with Firecrawl", () => {
+  const fcRes = (...urls: string[]) =>
+    jsonRes({ success: true, data: { images: urls.map((u) => ({ imageUrl: u })) } });
+
+  it("puts Firecrawl after Wikipedia and before Commons", async () => {
+    process.env.FIRECRAWL_KEY = "fc-test";
+    try {
+      net = mockFetch((url) => {
+        if (url.includes("firecrawl")) return fcRes("https://fc/a.jpg", "https://fc/b.jpg");
+        if (url.includes("geobrowser")) return jsonRes({ data: { entities: [] } });
+        if (url.includes("en.wikipedia.org") && url.includes("list=search")) {
+          return jsonRes({ query: { search: [{ title: "T" }] } });
+        }
+        if (url.includes("en.wikipedia.org")) {
+          return jsonRes({ query: { pages: { 1: { thumbnail: { source: "https://wiki/p.jpg" } } } } });
+        }
+        if (url.includes("commons") && url.includes("list=search")) {
+          return jsonRes({ query: { search: [{ title: "File:C.jpg" }] } });
+        }
+        if (url.includes("commons")) return jsonRes({ query: { pages: { 1: { imageinfo: [{ url: "https://c/c.jpg" }] } } } });
+        return errorRes(404);
+      });
+      const got = await collect(resolveCandidates("person", "Robert Turner", "", { context: "British diabetologist" }));
+      assert.deepEqual(got.map((c) => c.src), ["wikipedia", "firecrawl", "firecrawl", "commons"]);
+      assert.equal(got[1].conf, CONF.firecrawl);
+    } finally {
+      delete process.env.FIRECRAWL_KEY;
+    }
+  });
+
+  it("turns one ranked search into several candidates so a 403 is survivable", async () => {
+    process.env.FIRECRAWL_KEY = "fc-test";
+    try {
+      net = mockFetch((url) => (url.includes("firecrawl") ? fcRes("https://fc/1", "https://fc/2", "https://fc/3") : errorRes(404)));
+      const got = await collect(resolveCandidates("person", "X", "", { context: "c" }));
+      assert.deepEqual(got.filter((c) => c.src === "firecrawl").map((c) => c.url), ["https://fc/1", "https://fc/2", "https://fc/3"]);
+    } finally {
+      delete process.env.FIRECRAWL_KEY;
+    }
+  });
+
+  it("passes the Geo description to Firecrawl", async () => {
+    process.env.FIRECRAWL_KEY = "fc-test";
+    try {
+      net = mockFetch((url) => (url.includes("firecrawl") ? fcRes("https://fc/1") : errorRes(404)));
+      await collect(resolveCandidates("person", "Robert Turner", "", { context: "British diabetologist at Oxford" }));
+      const call = net.to("firecrawl")[0];
+      assert.equal(call.json.query, "Robert Turner British diabetologist at Oxford");
+    } finally {
+      delete process.env.FIRECRAWL_KEY;
+    }
+  });
+
+  it("skips Firecrawl entirely for non-people", async () => {
+    process.env.FIRECRAWL_KEY = "fc-test";
+    try {
+      net = mockFetch(() => errorRes(404));
+      await collect(resolveCandidates("company", "ACME", "ACME", { context: "a firm" }));
+      assert.equal(net.to("firecrawl").length, 0, "logos do not need open-web face search");
+    } finally {
+      delete process.env.FIRECRAWL_KEY;
+    }
+  });
+});
+
+describe("identity-aware person gate", () => {
+  it("checks the candidate against the dossier, not just 'is it a face'", async () => {
+    net = mockFetch(() => chatRes("NO"));
+    const r = await refGate(PNG_BYTES, "image/png", "Robert Turner", "person",
+      "British diabetologist and professor at the University of Oxford");
+    const asked = net.calls[0].json.messages[0].content[0].text;
+    assert.match(asked, /WHO THEY ARE: British diabetologist/);
+    assert.match(asked, /DIFFERENT person who happens to share the name/);
+    assert.equal(r.reason, "not-this-person");
+  });
+
+  it("does not ask the model to judge by ethnicity", async () => {
+    net = mockFetch(() => chatRes("YES"));
+    await refGate(PNG_BYTES, "image/png", "X", "person", "a description");
+    assert.match(net.calls[0].json.messages[0].content[0].text, /do not judge by ethnicity/);
+  });
+
+  it("leaves non-people lenient", async () => {
+    net = mockFetch(() => chatRes("NO"));
+    const r = await refGate(PNG_BYTES, "image/png", "SEC", "government", "an agency");
+    assert.match(net.calls[0].json.messages[0].content[0].text, /clearly UNUSABLE/);
+    assert.equal(r.reason, "wrong-ref");
+  });
+
+  it("still fails OPEN on an API error", async () => {
+    net = mockFetch(() => errorRes(500));
+    assert.deepEqual(await refGate(PNG_BYTES, "image/png", "X", "person", "c"), { ok: true, reason: "gate-error" });
+  });
+
+  it("hands the factor's context to the gate", async () => {
+    net = refNet(["NO"], () => bytesRes(PNG_BYTES, "image/png"));
+    await resolveRefs([{
+      name: "Robert Turner", kind: "person", role: "r",
+      ownImageUrls: ["https://g/a"], context: "British diabetologist at Oxford",
+    }]);
+    assert.match(net.to("openai.com")[0].json.messages[0].content[0].text, /WHO THEY ARE: British diabetologist at Oxford/);
   });
 });

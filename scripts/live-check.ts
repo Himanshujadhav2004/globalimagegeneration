@@ -11,6 +11,7 @@
 import { download } from "../src/refs.js";
 import { dossierText, gql, ownImageUrls, resolveSubject, SYS } from "../src/geo.js";
 import { GEO_GRAPHQL, IMAGE_MODEL, PLANNER_MODEL, VISION_MODEL } from "../src/config.js";
+import { firecrawlEnabled, firecrawlImages } from "../src/firecrawl.js";
 
 try {
   process.loadEnvFile?.(new URL("../.env", import.meta.url).pathname.replace(/^\//, ""));
@@ -132,6 +133,26 @@ if (!key) {
     });
     if (!r.ok) throw new Error(`HTTP ${r.status}: ${(await r.text()).slice(0, 200)}`);
     return "billing is live — full renders will work";
+  });
+}
+
+// ── Firecrawl ───────────────────────────────────────────────────────
+console.log(`\nFirecrawl (open-web image search for people)\n`);
+
+if (!firecrawlEnabled()) {
+  console.log("  – skipped: FIRECRAWL_API_KEY is not set");
+} else {
+  await check("finds a usable photo from name + Geo description", async () => {
+    // The bare name returns a media mogul, a law professor and a software
+    // engineer; the description is what lands on the Oxford endocrinologist.
+    const urls = await firecrawlImages(
+      "Robert Turner", "British diabetologist and professor at the University of Oxford", 5);
+    if (!urls.length) throw new Error("no image results");
+    for (const u of urls) {
+      const img = await download(u);
+      if (img) return `${urls.length} candidates, first usable: ${img.mime}, ${img.buf.length}b`;
+    }
+    throw new Error(`all ${urls.length} candidates failed to download (hotlink-protected?)`);
   });
 }
 

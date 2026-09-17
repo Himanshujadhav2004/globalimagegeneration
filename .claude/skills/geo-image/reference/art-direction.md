@@ -91,7 +91,11 @@ Each subject fails differently, so each gets its own planner prompt:
 
 What the render is told about each reference image:
 
-- **person** — "preserve their exact face and identity"
+- **person** — "preserve their exact face and identity". The gate that admits
+  a person reference checks IDENTITY, not just "is this a face": it is given
+  the subject's Geo description and rejects a photograph that cannot be them
+  (wrong era, wrong apparent age, another walk of life). Without that check a
+  web search happily returns a different real person of the same name.
 - **agreement** — a printed document whose real short title is legible, body
   copy as soft texture, no seal on the document
 - **everything else** — the entity's real mark, integrated naturally; prefer a
