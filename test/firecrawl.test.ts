@@ -1,6 +1,6 @@
 import { describe, it, afterEach } from "node:test";
 import assert from "node:assert/strict";
-import { firecrawlEnabled, firecrawlImages } from "../src/firecrawl.js";
+import { firecrawlEnabled, firecrawlImages, titleNamesPerson } from "../src/firecrawl.js";
 import { errorRes, jsonRes, mockFetch, textRes, type MockHandle } from "./helpers/mock.js";
 
 let net: MockHandle | null = null;
@@ -102,5 +102,55 @@ describe("firecrawlImages", () => {
     net = mockFetch(() => images("https://a/1.jpg"));
     await firecrawlImages("Ada Lovelace");
     assert.equal(net.calls[0].json.query, "Ada Lovelace");
+  });
+});
+
+// ── the Thomas Ham failure: a result about somebody else entirely ────
+describe("titleNamesPerson", () => {
+  it("keeps the right man and drops the impostor that broke Thomas Ham", () => {
+    // Live results for "Thomas Ham American hematologist ...", in rank order.
+    const real = "Thomas Ham";
+    assert.equal(titleNamesPerson("Dr Thomas Hale Ham (1905-1987) - Find a Grave Memorial", real), true);
+    assert.equal(titleNamesPerson("Jesús San Miguel, MD, PhD - International Myeloma Society", real), false);
+    assert.equal(titleNamesPerson("Swaminathan P. Iyer | UT MD Anderson", real), false);
+    assert.equal(titleNamesPerson("Professor David Thomas", real), false, "shares one token, not both");
+    assert.equal(titleNamesPerson("Dolly Parton Children's Hospital couple Dr. Jennifer and Dr. Austin Hamm", real), false);
+  });
+
+  it("tolerates a clipped or varied spelling", () => {
+    assert.equal(titleNamesPerson("Afshin Matin-Asgar | CSU", "Afshin Matin-Asgari"), true);
+    assert.equal(titleNamesPerson("Dr. Afshin Matin-Asgari - UCLA (January 11, 2009)", "Afshin Matin-Asgari"), true);
+  });
+
+  it("ignores accents, punctuation, honorifics and particles", () => {
+    assert.equal(titleNamesPerson("Albert de la Chapelle (1933–2020)", "Albert de la Chapelle"), true);
+    assert.equal(titleNamesPerson("PROF. ALBERT DE LA CHAPELLE", "Albert de la Chapelle"), true);
+    assert.equal(titleNamesPerson("Jesus San Miguel", "Jesús San Miguel"), true);
+  });
+
+  it("still admits same-name strangers — that is the vision gate's job", () => {
+    assert.equal(titleNamesPerson("Robert Turner - Senior Research Software Engineer", "Robert Turner"), true);
+    assert.equal(titleNamesPerson("Dr. Robert Turner (1938–1999)", "Robert Turner"), true);
+  });
+
+  it("rejects an untitled result and never filters when the name is unusable", () => {
+    assert.equal(titleNamesPerson("", "Thomas Ham"), false);
+    assert.equal(titleNamesPerson("anything at all", "  "), true);
+  });
+
+  it("filters the live-shaped payload end to end", async () => {
+    process.env.FIRECRAWL_KEY = "fc-test";
+    try {
+      net = mockFetch(() => jsonRes({
+        data: { images: [
+          { title: "Dr Thomas Hale Ham (1905-1987) - Find a Grave Memorial", imageUrl: "https://ok/1.jpg" },
+          { title: "Jesús San Miguel, MD, PhD", imageUrl: "https://wrong/2.jpg" },
+          { title: "Swaminathan P. Iyer", imageUrl: "https://wrong/3.jpg" },
+        ] },
+      }));
+      assert.deepEqual(await firecrawlImages("Thomas Ham", "American hematologist"), ["https://ok/1.jpg"]);
+    } finally {
+      delete process.env.FIRECRAWL_KEY;
+    }
   });
 });
