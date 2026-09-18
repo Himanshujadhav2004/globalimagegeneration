@@ -33,10 +33,19 @@ export const BRANDFETCH_KEY = () => env("BRANDFETCH_KEY", "");
 export const FIRECRAWL_KEY = () => env("FIRECRAWL_KEY", "") || env("FIRECRAWL_API_KEY", "");
 
 // ── Render size ─────────────────────────────────────────────────────
-/** The one output shape: the editorial cover banner. */
+/**
+ * The one output shape: the editorial cover banner.
+ *
+ * The UI re-crops this single render with `object-cover` for four views —
+ * gallery (2:1), list (64x64), explore (60x60) and pill (16x16, a circle) — so
+ * the square views show only SAFE_SQUARE_FRACTION of the width, centred.
+ * art.ts's CROP_SAFETY clause is what makes the render survive that.
+ */
 export const RENDER_SIZE = "1536x640";
 /** Used once if the image model rejects RENDER_SIZE; still crops to a banner. */
 export const FALLBACK_SIZE = "1536x1024";
+/** 640/1536 — the centred square the list/explore/pill crops keep. */
+export const SAFE_SQUARE_FRACTION = 640 / 1536;
 
 // ── Pipeline tunables (carried over from factors114 / cover-pipeline) ─
 export const MAXREF = 4;                 // reference images fed to the edits endpoint

@@ -1,11 +1,11 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
-  AGREEMENT_REF_LINE, ENTITY_REF_LINE, PERSON_REF_LINE, PROFILES,
+  AGREEMENT_REF_LINE, CROP_SAFETY, ENTITY_REF_LINE, PERSON_REF_LINE, PROFILES,
   composePrompt, defaultProfile, expectsPeople, isProfile, refLineFor, retryHint,
   type Profile,
 } from "../src/art.js";
-import { FALLBACK_SIZE, RENDER_SIZE } from "../src/config.js";
+import { FALLBACK_SIZE, RENDER_SIZE, SAFE_SQUARE_FRACTION } from "../src/config.js";
 import { hasLegacy, legacyConst } from "./helpers/legacy.js";
 
 const base = {
@@ -28,6 +28,22 @@ describe("frame", () => {
     for (const profile of PROFILES) {
       assert.ok(composePrompt({ ...base, profile }).includes("Wide cinematic 21:9 banner."), profile);
     }
+  });
+
+  // One render feeds four crops (gallery 2:1, list 64, explore 60, pill 16
+  // round), so the centre square has to carry the picture on its own.
+  it("asks every profile to keep the subject inside the centred square crop", () => {
+    for (const profile of PROFILES) {
+      const p = composePrompt({ ...base, profile });
+      assert.ok(p.includes("CROP-SAFE COMPOSITION"), `${profile} lost the crop rule`);
+      assert.ok(p.includes("middle 40% of the width"), `${profile} lost the safe area`);
+    }
+  });
+
+  it("states the safe area the square crops actually keep", () => {
+    const [w, h] = RENDER_SIZE.split("x").map(Number);
+    assert.equal(SAFE_SQUARE_FRACTION, h / w, "the safe square is the full-height centred square");
+    assert.ok(Math.abs(SAFE_SQUARE_FRACTION - 0.4) < 0.02, "the prompt's 40% no longer matches");
   });
 });
 
@@ -182,6 +198,11 @@ describe("retryHint", () => {
 });
 
 // ── regression guard against the validated news prompt ──────────────
+//
+// The editorial prompt is the legacy news prompt VERBATIM plus exactly one
+// addition: CROP_SAFETY, appended last. That addition is deliberate — the news
+// covers are shown in the same gallery/list/explore/pill views as every other
+// subject, so they need the same centred composition. Nothing else may drift.
 describe("the editorial profile reproduces the legacy news prompt", { skip: !hasLegacy() }, () => {
   it("keeps the reference lines byte-identical", () => {
     assert.equal(PERSON_REF_LINE, legacyConst("PERSON_REF_LINE"));
@@ -189,11 +210,14 @@ describe("the editorial profile reproduces the legacy news prompt", { skip: !has
     assert.equal(ENTITY_REF_LINE, legacyConst("ENTITY_REF_LINE"));
   });
 
-  it("keeps the static clause block byte-identical", () => {
+  it("keeps the static clause block byte-identical, with only the crop rule appended", () => {
     const legacy = legacyConst("STATIC_CLAUSES");
     assert.ok(legacy, "could not read STATIC_CLAUSES from cover-pipeline.ts");
     const prompt = composePrompt({ ...base, profile: "editorial" });
-    assert.ok(prompt.endsWith(legacy!), "the editorial profile no longer ends with the legacy clause block");
+    assert.ok(
+      prompt.endsWith(legacy + "\n\n" + CROP_SAFETY),
+      "the editorial profile no longer ends with the legacy clause block plus the crop rule",
+    );
   });
 
   it("produces the whole legacy prompt for a story", () => {
@@ -203,7 +227,7 @@ describe("the editorial profile reproduces the legacy news prompt", { skip: !has
     const refs = [{ name: "SEC", role: "the seal on the wall", kind: "government" }];
     const described = [{ name: "a $250 bill", role: "held to camera" }];
 
-    // Rebuilt exactly as cover-pipeline.ts's composePrompt does.
+    // Rebuilt exactly as cover-pipeline.ts's composePrompt does, plus the crop rule.
     const expected =
       `Using the 1 reference image(s) provided, create ONE photorealistic editorial ` +
       `news photograph that tells this story: ${headline}.\n\n` +
@@ -212,7 +236,7 @@ describe("the editorial profile reproduces the legacy news prompt", { skip: !has
       "Also depict, rendered naturally from description (generic, no specific real brand " +
       "or logo, no watermark): a $250 bill (held to camera).\n\n" +
       `Compose everything into a single cohesive, believable news scene: ${comp}\n\n` +
-      legacyStatic;
+      legacyStatic + "\n\n" + CROP_SAFETY;
 
     const actual = composePrompt({
       subject: headline, composition: comp, refs, described, profile: "editorial",

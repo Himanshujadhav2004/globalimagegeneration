@@ -64,6 +64,22 @@ the only shape the product uses, and the composition is planned for it rather
 than cropped into it afterwards. If the model ever rejects that size, one
 fallback render at 1536×1024 still crops to the banner ratio.
 
+**One render serves four views.** The UI re-crops that same banner with
+`object-cover`, so the prompt composes for all four at once (`CROP_SAFETY` in
+`src/art.ts`):
+
+| View | Crop | What survives |
+|---|---|---|
+| gallery | `aspect-2/1` | 1280×640 centred — outer **8%** each side is lost |
+| list | 64×64 | the centre **640×640** square |
+| explore | 60×60 | the centre **640×640** square |
+| pill | 16×16 `rounded-full` | that square as a **circle**, fingernail-sized |
+
+So the subject is **centred**: everything that identifies it lives in the middle
+40% of the width, with a clean silhouette that still reads at 16px, and the
+outer 30% at each side carries only disposable context. A third QC pass
+(`PASS 3 CROP`) re-renders an image whose centre square would come up empty.
+
 **Profiles** set the look. `--profile auto` (the default) picks from the subject,
 and lets the planner override:
 
