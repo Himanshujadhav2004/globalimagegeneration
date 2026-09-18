@@ -66,8 +66,21 @@ its camera clause and its people rule.
 
 Every profile renders at one size — 1536×640, the cover banner — and closes its
 look sentence with "Wide cinematic 21:9 banner." so the scene is composed for
-that frame. The `editorial` profile reproduces the legacy news prompt **byte for
-byte**; a test asserts this against `cover-pipeline.ts` directly.
+that frame.
+
+Every profile then carries `CROP_SAFETY`, because that one banner is re-cropped
+by the UI into a 2:1 gallery tile, 64px and 60px squares, and a 16px round pill.
+The rule names the geometry: the centred **middle 40% of the width** is the real
+picture and must hold the subject, whole, with a silhouette that reads at
+fingernail size and nothing vital in the square's corners (the pill is a
+circle); the outer **30% at each side** is disposable context. `PASS 3 CROP` in
+`src/qc.ts` re-renders when the subject falls outside that square — narrowly, so
+merely off-centre is not a defect.
+
+The `editorial` profile reproduces the legacy news prompt **byte for byte** plus
+`CROP_SAFETY` appended last, and nothing else; a test asserts exactly that
+against `cover-pipeline.ts` directly. The crop rule is deliberate — news covers
+appear in the same four views as every other subject.
 
 ## Per-subject planner rules
 

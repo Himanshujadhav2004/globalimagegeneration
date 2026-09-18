@@ -402,20 +402,22 @@ describe("resolveRefs", () => {
 
   it("returns nothing at all for no factors", async () => {
     net = refNet(["YES"], () => errorRes(404));
-    assert.deepEqual(await resolveRefs([]), { refs: [], described: [], scores: [] });
+    assert.deepEqual(await resolveRefs([]), { refs: [], described: [], scores: [], unverifiedPeople: [] });
   });
 });
 
 // ── person identity: Firecrawl + the identity gate ──────────────────
 describe("person chain with Firecrawl", () => {
-  const fcRes = (...urls: string[]) =>
-    jsonRes({ success: true, data: { images: urls.map((u) => ({ imageUrl: u })) } });
+  // Live results always carry a title, and firecrawlImages now requires one
+  // that names the person — so the mock must carry one too.
+  const fcRes = (who: string, ...urls: string[]) =>
+    jsonRes({ success: true, data: { images: urls.map((u, i) => ({ title: `${who} — profile ${i}`, imageUrl: u })) } });
 
   it("puts Firecrawl after Wikipedia and before Commons", async () => {
     process.env.FIRECRAWL_KEY = "fc-test";
     try {
       net = mockFetch((url) => {
-        if (url.includes("firecrawl")) return fcRes("https://fc/a.jpg", "https://fc/b.jpg");
+        if (url.includes("firecrawl")) return fcRes("Robert Turner", "https://fc/a.jpg", "https://fc/b.jpg");
         if (url.includes("geobrowser")) return jsonRes({ data: { entities: [] } });
         if (url.includes("en.wikipedia.org") && url.includes("list=search")) {
           return jsonRes({ query: { search: [{ title: "T" }] } });
@@ -440,7 +442,7 @@ describe("person chain with Firecrawl", () => {
   it("turns one ranked search into several candidates so a 403 is survivable", async () => {
     process.env.FIRECRAWL_KEY = "fc-test";
     try {
-      net = mockFetch((url) => (url.includes("firecrawl") ? fcRes("https://fc/1", "https://fc/2", "https://fc/3") : errorRes(404)));
+      net = mockFetch((url) => (url.includes("firecrawl") ? fcRes("X", "https://fc/1", "https://fc/2", "https://fc/3") : errorRes(404)));
       const got = await collect(resolveCandidates("person", "X", "", { context: "c" }));
       assert.deepEqual(got.filter((c) => c.src === "firecrawl").map((c) => c.url), ["https://fc/1", "https://fc/2", "https://fc/3"]);
     } finally {
@@ -451,7 +453,7 @@ describe("person chain with Firecrawl", () => {
   it("passes the Geo description to Firecrawl", async () => {
     process.env.FIRECRAWL_KEY = "fc-test";
     try {
-      net = mockFetch((url) => (url.includes("firecrawl") ? fcRes("https://fc/1") : errorRes(404)));
+      net = mockFetch((url) => (url.includes("firecrawl") ? fcRes("Robert Turner", "https://fc/1") : errorRes(404)));
       await collect(resolveCandidates("person", "Robert Turner", "", { context: "British diabetologist at Oxford" }));
       const call = net.to("firecrawl")[0];
       assert.equal(call.json.query, "Robert Turner British diabetologist at Oxford");

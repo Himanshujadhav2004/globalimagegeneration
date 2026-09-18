@@ -27,6 +27,12 @@ describe("qcPrompt", () => {
     assert.match(qcPrompt("landmark"), /PASS 2 FORM/);
   });
 
+  it("checks the centred square crop in every profile", () => {
+    for (const p of PROFILES) assert.match(qcPrompt(p), /PASS 3 CROP/, p);
+    // Narrow on purpose: off-centre is not a defect, only a subject the crop misses.
+    assert.match(qcPrompt("editorial"), /merely a little off-centre.+is NOT a defect/s);
+  });
+
   it("keeps the intentional-softness and satirical-denomination carve-outs", () => {
     const p = qcPrompt("editorial");
     assert.match(p, /Do NOT flag text that is intentionally soft/);

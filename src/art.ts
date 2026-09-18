@@ -11,8 +11,9 @@
  *   still-life  arranged real objects on a surface  properties, abstract concepts
  *   emblem      one object, museum-object lighting  types, icons, marks
  *
- * The `editorial` profile reproduces the validated news prompt verbatim, so
- * existing story covers do not change.
+ * The `editorial` profile reproduces the validated news prompt verbatim — plus
+ * CROP_SAFETY, the one deliberate addition, which every profile carries because
+ * every rendered banner is re-cropped by the UI.
  */
 
 import { ordinal } from "./util.js";
@@ -24,6 +25,36 @@ import { ordinal } from "./util.js";
  * frame rather than cropped into it afterwards.
  */
 const FRAME_CLAUSE = "Wide cinematic 21:9 banner.";
+
+/**
+ * One render, four views. The UI re-crops this single 1536x640 banner with
+ * `object-cover`, so the geometry below is fixed and worth stating exactly:
+ *
+ *   gallery  aspect-2/1        -> 1280x640 centred, losing 128px (8%) each side
+ *   list     64x64  rounded-lg  ┐
+ *   explore  60x60  rounded-lg  ├ 1:1 -> the centre 640x640, losing 448px (29%) each side
+ *   pill     16x16  rounded-full┘  and the pill rounds that square into a circle
+ *
+ * So the composition has to work at three scales at once: the full banner, the
+ * centre square, and that square as a fingernail-sized circle. Everything that
+ * identifies the subject must live in the middle 40% of the width; the outer
+ * 30% at each side is atmosphere the crop is free to throw away.
+ */
+export const CROP_SAFETY =
+  `CROP-SAFE COMPOSITION — CRITICAL. This one wide banner is ALSO shown cropped to a centred ` +
+  `SQUARE and to a small round avatar, so compose it to survive all three at once. Treat the ` +
+  `CENTRAL SQUARE — the middle 40% of the width, full height — as the real picture: the single ` +
+  `most identifying element (the subject’s face, the real mark, the hero object) sits INSIDE ` +
+  `that square, centred, large and unobstructed, with the frame balanced about it rather than ` +
+  `weighted off to one side. Compose it so it still reads when that square is reduced to a ` +
+  `fingernail-sized circle: a clear, uncluttered silhouette, strong tonal and colour separation ` +
+  `from whatever is behind it, and no busy pattern, crossing limbs, poles or overlapping figures ` +
+  `through the centre. Because the small view is a CIRCLE, nothing essential sits in that ` +
+  `square’s corners, and there is calm headroom above and below the subject so the square crop ` +
+  `never slices its head or its base. The outer 30% at each side is context ONLY — falling ` +
+  `light, room, landscape, an out-of-focus crowd — and must be disposable: no part of the ` +
+  `subject, no legible sign, mark or title, and no second point of interest lives out there, and ` +
+  `nothing important is cut by the left or right edge.`;
 
 // ── Profiles ────────────────────────────────────────────────────────
 export type Profile = "editorial" | "portrait" | "landmark" | "still-life" | "emblem";
@@ -154,6 +185,24 @@ const DISTANT_PEOPLE =
   `silhouette or motion-blurred, never a sharp recognizable face. (Small detailed background ` +
   `faces render as melted glitches.)`;
 
+/**
+ * No photograph of this person could be verified, so any face we drew would be
+ * an invented stranger wearing their name. Photograph their work instead.
+ */
+function unverifiedClause(names: string[]): string {
+  return (
+    `IDENTITY — CRITICAL. No verified photograph exists for: ${names.join(", ")}. They MUST NOT ` +
+    `appear in the image. Do not invent a face for them, do not substitute a look-alike, model or ` +
+    `stand-in, and do not show ANY sharp, identifiable human face anywhere in the frame — an ` +
+    `invented face captioned with a real person's name is a fabrication. Ignore any part of the ` +
+    `scene description that places them in the picture, and instead photograph the place, the work ` +
+    `and the objects around them with the person absent: their desk, their instruments, their ` +
+    `books, their workshop, their setting. An empty chair, a workspace caught mid-use, or the view ` +
+    `across their desk is exactly right. If a human presence is unavoidable it must be distant, ` +
+    `turned away, silhouetted or cropped so no face is readable.`
+  );
+}
+
 // ── Per-profile look + lead-in sentences ────────────────────────────
 interface ProfileSpec {
   /** "create ONE photorealistic … that <lead> …" */
@@ -267,6 +316,8 @@ export interface ComposeInput {
   refs: PromptRef[];
   described: PromptDescribed[];
   profile: Profile;
+  /** People with no verified likeness — they must stay out of the frame. */
+  unverified?: string[];
   /** Appended verbatim — the QC retry hint. */
   extra?: string;
 }
@@ -296,8 +347,12 @@ export function composePrompt(input: ComposeInput): string {
       ".\n\n";
   }
 
-  const peopleBlocks =
-    spec.people === "cast" ? [HANDS, BACKGROUND_PEOPLE] : spec.people === "none" ? [NO_PEOPLE] : [DISTANT_PEOPLE];
+  const unverified = input.unverified ?? [];
+  const peopleBlocks = unverified.length
+    ? [NO_PEOPLE, unverifiedClause(unverified)]
+    : spec.people === "cast" ? [HANDS, BACKGROUND_PEOPLE]
+    : spec.people === "none" ? [NO_PEOPLE]
+    : [DISTANT_PEOPLE];
 
   const clauses = [
     SINGLE_FRAME,
@@ -306,6 +361,7 @@ export function composePrompt(input: ComposeInput): string {
     PROPS,
     ...peopleBlocks,
     `${spec.look} ${FRAME_CLAUSE}`,
+    CROP_SAFETY,
   ].join("\n\n");
 
   body += `${spec.composeLead} ${input.composition}\n\n` + clauses;
@@ -319,6 +375,9 @@ export function retryHint(defect: string): string {
     "CRITICAL RETRY — the previous render had this specific defect: " + defect +
     ". Regenerate the SAME scene, subjects and composition, but FIX EXACTLY that defect — " +
     "spell any flagged word correctly or omit it entirely, and redraw any flagged hand " +
-    "cleanly with five natural fingers or move it out of view. Change nothing else."
+    "cleanly with five natural fingers or move it out of view. If the defect is about the " +
+    "crop or the centre, keep the same scene and simply re-frame it: move the camera so the " +
+    "subject sits square in the middle 40% of the width, whole and unobstructed, and let the " +
+    "outer thirds fall away into context. Change nothing else."
   );
 }

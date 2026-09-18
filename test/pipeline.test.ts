@@ -236,10 +236,18 @@ describe("generateImage (render)", () => {
   it("falls back to the subject's default profile when nobody chose", async () => {
     net = pipelineNet({
       entity: entityRow({ name: "Vitalik Buterin", types: [{ name: "Person" }] }),
+      // A verified likeness, so the no-face rule does not (correctly) override
+      // the default — this test is about profile selection and nothing else.
+      ownRelations: [{
+        typeId: "1155befffad549b7a2e0da4777b8792c",
+        toEntity: { valuesList: [{ propertyId: "8a743832c0944a62b6650c3cc2f9c7bc", text: "ipfs://cid" }] },
+      }],
+      images: ["/cid"],
       plan: { factors: [], composition: "c" },
     });
     const r = await generateImage({ subject: { kind: "entity", ref: "0".repeat(32) }, profile: "auto" });
     assert.equal(r.profile, "portrait", "a person defaults to a portrait");
+    assert.deepEqual(r.unverifiedPeople, []);
   });
 
   it("invents a factor for the subject when the planner returns none", async () => {
@@ -291,5 +299,61 @@ describe("generateGroundedCover", () => {
     net = pipelineNet({ plan: {} });
     const r = await generateGroundedCover("SEC drops its case", "");
     assert.equal(r.sceneDescription, "a single real scene that stands for SEC drops its case");
+  });
+});
+
+// ── never fabricate a face (the Thomas Ham failure) ─────────────────
+describe("unverified likeness", () => {
+  const person = entityRow({
+    name: "Thomas Ham",
+    description: "American hematologist and professor at Case Western Reserve University.",
+    types: [{ name: "Person" }],
+  });
+
+  it("drops the portrait and bans the face when no likeness resolves", async () => {
+    net = pipelineNet({
+      entity: person,
+      plan: { factors: [{ name: "Thomas Ham", kind: "person" }], composition: "a portrait of him at the bench" },
+      gate: ["NO"],
+    });
+    const r = await generateImage({ subject: { kind: "entity", ref: "0".repeat(32) } });
+
+    assert.deepEqual(r.unverifiedPeople, ["Thomas Ham"]);
+    assert.equal(r.profile, "still-life", "the portrait look exists to show a face; there is none to show");
+    assert.match(r.trace, /\[no-likeness:1\]/);
+    const prompt = net.to("/images/generations")[0].json.prompt;
+    assert.match(prompt, /IDENTITY — CRITICAL/);
+    assert.match(prompt, /Thomas Ham\. They MUST NOT/);
+    assert.match(prompt, /NO PEOPLE —/);
+    assert.ok(!prompt.includes("BACKGROUND PEOPLE"), "the cast rules must not survive");
+  });
+
+  it("keeps the portrait when the likeness IS verified", async () => {
+    net = pipelineNet({
+      entity: person,
+      ownRelations: [{
+        typeId: "1155befffad549b7a2e0da4777b8792c",
+        toEntity: { valuesList: [{ propertyId: "8a743832c0944a62b6650c3cc2f9c7bc", text: "ipfs://cid" }] },
+      }],
+      images: ["/cid"],
+      plan: { factors: [{ name: "Thomas Ham", kind: "person" }], composition: "a portrait", profile: "portrait" },
+      gate: ["YES"],
+    });
+    const r = await generateImage({ subject: { kind: "entity", ref: "0".repeat(32) } });
+    assert.deepEqual(r.unverifiedPeople, []);
+    assert.equal(r.profile, "portrait");
+    assert.ok(!r.trace.includes("no-likeness"));
+    assert.ok(!net.to("/images/edits")[0].form!.prompt.includes("IDENTITY — CRITICAL"));
+  });
+
+  it("leaves an already-faceless profile alone but still bans the face", async () => {
+    net = pipelineNet({
+      entity: person,
+      plan: { factors: [{ name: "Thomas Ham", kind: "person" }], composition: "c", profile: "emblem" },
+      gate: ["NO"],
+    });
+    const r = await generateImage({ subject: { kind: "entity", ref: "0".repeat(32) } });
+    assert.equal(r.profile, "emblem");
+    assert.match(net.to("/images/generations")[0].json.prompt, /IDENTITY — CRITICAL/);
   });
 });

@@ -55,6 +55,8 @@ export interface GeneratedImage {
   plan: Plan;
   refs: Array<{ name: string; kind: string; src: string; conf: number }>;
   described: Array<{ name: string; role: string }>;
+  /** People with no verified likeness — deliberately kept out of the frame. */
+  unverifiedPeople: string[];
 }
 
 // ── Factor preparation ──────────────────────────────────────────────
@@ -124,7 +126,7 @@ export async function generateImage(opts: GenerateOptions): Promise<GeneratedIma
   const plan = await planSubject(dossier, { model: opts.plannerModel });
 
   const pinned = opts.profile && opts.profile !== "auto" ? opts.profile : undefined;
-  const profile: Profile = pinned ?? plan.profile ?? defaultProfile(dossier.subject, dossier.refKind);
+  let profile: Profile = pinned ?? plan.profile ?? defaultProfile(dossier.subject, dossier.refKind);
 
   const planFactors = plan.factors.length ? plan.factors : fallbackFactors(dossier);
   const factors = attachOwnImages(planFactors, dossier);
@@ -132,6 +134,7 @@ export async function generateImage(opts: GenerateOptions): Promise<GeneratedIma
   let refs: ResolvedRef[] = [];
   let described: Array<{ name: string; role: string }> = factors.map((f) => ({ name: f.name, role: f.role }));
   let scores: string[] = factors.map((f) => `${f.name}=plan-only`);
+  let unverified: string[] = [];
 
   if (!opts.dryRun || opts.resolveRefsInDryRun) {
     stage("refs", `${factors.length} factor(s)`);
@@ -139,6 +142,15 @@ export async function generateImage(opts: GenerateOptions): Promise<GeneratedIma
     refs = resolved.refs.slice(0, MAXREF);
     described = resolved.described;
     scores = resolved.scores;
+    unverified = resolved.unverifiedPeople;
+  }
+
+  // Nothing could verify what this person looks like. The portrait profile
+  // exists to put a face in the frame, and any face we drew would be a stranger
+  // wearing their name — so photograph their work instead.
+  if (unverified.length && (profile === "portrait" || profile === "editorial")) {
+    stage("identity", `no likeness for ${unverified.join(", ")} — rendering their setting, no face`);
+    profile = "still-life";
   }
 
   const base = {
@@ -147,7 +159,10 @@ export async function generateImage(opts: GenerateOptions): Promise<GeneratedIma
     refs: refs.map((r) => ({ name: r.name, role: r.role, kind: r.kind })),
     described,
     profile,
+    unverified,
   };
+
+  const noFace = unverified.length ? ` [no-likeness:${unverified.length}]` : "";
 
   const summary = {
     sceneDescription: plan.composition || dossier.name,
@@ -159,6 +174,7 @@ export async function generateImage(opts: GenerateOptions): Promise<GeneratedIma
     plan,
     refs: refs.map((r) => ({ name: r.name, kind: r.kind, src: r.src, conf: r.conf })),
     described,
+    unverifiedPeople: unverified,
   };
 
   if (opts.dryRun) {
@@ -168,7 +184,7 @@ export async function generateImage(opts: GenerateOptions): Promise<GeneratedIma
       imageBase64: "",
       mimeType: "",
       prompt,
-      trace: `${scores.join(" ")} [qc:dry-run] [profile:${profile}]`,
+      trace: `${scores.join(" ")} [qc:dry-run] [profile:${profile}]${noFace}`,
     };
   }
 
@@ -202,7 +218,7 @@ export async function generateImage(opts: GenerateOptions): Promise<GeneratedIma
     imageBase64: data.toString("base64"),
     mimeType,
     prompt,
-    trace: `${scores.join(" ")} [qc:${qc}] [profile:${profile}]`,
+    trace: `${scores.join(" ")} [qc:${qc}] [profile:${profile}]${noFace}`,
   };
 }
 

@@ -1,10 +1,11 @@
 /**
  * qc.ts — look at the render and decide whether to re-render.
  *
- * Two passes, and both are deliberately narrow: the renderer is *told* to make
- * small text soft and impressionistic, so a QC that flags "unreadable text"
- * would reject every good image. Only real defects count — sharp text that
- * spells something wrong, and (where people are expected) a malformed hand.
+ * Three passes, and all of them are deliberately narrow: the renderer is *told*
+ * to make small text soft and impressionistic, so a QC that flags "unreadable
+ * text" would reject every good image. Only real defects count — sharp text
+ * that spells something wrong, (where people are expected) a malformed hand,
+ * and a subject placed where the UI's centred square crop would lose it.
  *
  * Fails OPEN: a QC that errors keeps the image. A false "bad" costs a render.
  */
@@ -38,16 +39,32 @@ const PASS2_FORM =
   `render; or a hand or human face is prominent AND obviously malformed. Soft focus, plain ` +
   `backgrounds, unusual objects and empty space are NOT defects. `;
 
+/**
+ * The banner is re-cropped to a centred square (and then a circle) for the
+ * list, explore and pill views, so an image whose subject sits out at one edge
+ * is a real defect even though the wide frame looks fine. Narrow on purpose:
+ * only a subject the square crop would MISS counts, not one merely off-centre.
+ */
+const PASS3_CROP =
+  `PASS 3 CROP: mentally crop this image to a centred SQUARE — keep only the middle 40% of the ` +
+  `width, discard the outer 30% at each side. Flag ONLY if that square would fail as a standalone ` +
+  `thumbnail: the main subject (the face, the mark, the hero object) falls mostly or entirely ` +
+  `outside it, or is cut in half by its edge, or the square would contain nothing but empty ` +
+  `background, floor, sky or wall. A subject that is merely a little off-centre, or one that ` +
+  `extends beyond the square while its identifying part stays inside, is NOT a defect. `;
+
 const CLOSING =
   `Set bad=true only if a pass finds a clear, glaring defect a reader would notice at a glance; ` +
   `otherwise bad=false. Name the pass and what you saw in reason.`;
 
 const HEADER =
-  `Strict QA on an AI-generated photograph. Examine it in two passes, then reply ONLY JSON ` +
+  `Strict QA on an AI-generated photograph. Examine it in three passes, then reply ONLY JSON ` +
   `{"bad": true|false, "reason": "..."}. `;
 
 export function qcPrompt(profile: Profile): string {
-  return HEADER + PASS1_TEXT + (expectsPeople(profile) ? PASS2_HANDS : PASS2_FORM) + CLOSING;
+  return (
+    HEADER + PASS1_TEXT + (expectsPeople(profile) ? PASS2_HANDS : PASS2_FORM) + PASS3_CROP + CLOSING
+  );
 }
 
 export interface QcResult {
