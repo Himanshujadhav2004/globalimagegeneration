@@ -525,6 +525,12 @@ export interface ResolveResult {
   described: Array<{ name: string; role: string }>;
   /** One token per factor for the trace line. */
   scores: string[];
+  /**
+   * People no source could verify a likeness for. Drawing an invented face and
+   * captioning it with their real name is a fabrication, so the caller keeps
+   * them out of the frame entirely.
+   */
+  unverifiedPeople: string[];
 }
 
 /**
@@ -537,6 +543,7 @@ export async function resolveRefs(factors: Factor[]): Promise<ResolveResult> {
   const refs: ResolvedRef[] = [];
   const described: Array<{ name: string; role: string }> = [];
   const scores: string[] = [];
+  const unverifiedPeople: string[] = [];
 
   for (const f of factors) {
     const kind = (f.kind ?? "").toLowerCase();
@@ -575,8 +582,9 @@ export async function resolveRefs(factors: Factor[]): Promise<ResolveResult> {
       described.push({ name: name || "?", role: f.role ?? "" });
       const gtag = gateReason && !["ok", "gate-error", ""].includes(gateReason) ? `⊘${gateReason}` : "none";
       scores.push(`${name}=describe(${gtag})`);
+      if (kind === "person" && name) unverifiedPeople.push(name);
     }
   }
 
-  return { refs, described, scores };
+  return { refs, described, scores, unverifiedPeople };
 }

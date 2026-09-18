@@ -402,7 +402,7 @@ describe("resolveRefs", () => {
 
   it("returns nothing at all for no factors", async () => {
     net = refNet(["YES"], () => errorRes(404));
-    assert.deepEqual(await resolveRefs([]), { refs: [], described: [], scores: [] });
+    assert.deepEqual(await resolveRefs([]), { refs: [], described: [], scores: [], unverifiedPeople: [] });
   });
 });
 

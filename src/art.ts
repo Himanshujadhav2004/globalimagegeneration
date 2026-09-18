@@ -154,6 +154,24 @@ const DISTANT_PEOPLE =
   `silhouette or motion-blurred, never a sharp recognizable face. (Small detailed background ` +
   `faces render as melted glitches.)`;
 
+/**
+ * No photograph of this person could be verified, so any face we drew would be
+ * an invented stranger wearing their name. Photograph their work instead.
+ */
+function unverifiedClause(names: string[]): string {
+  return (
+    `IDENTITY — CRITICAL. No verified photograph exists for: ${names.join(", ")}. They MUST NOT ` +
+    `appear in the image. Do not invent a face for them, do not substitute a look-alike, model or ` +
+    `stand-in, and do not show ANY sharp, identifiable human face anywhere in the frame — an ` +
+    `invented face captioned with a real person's name is a fabrication. Ignore any part of the ` +
+    `scene description that places them in the picture, and instead photograph the place, the work ` +
+    `and the objects around them with the person absent: their desk, their instruments, their ` +
+    `books, their workshop, their setting. An empty chair, a workspace caught mid-use, or the view ` +
+    `across their desk is exactly right. If a human presence is unavoidable it must be distant, ` +
+    `turned away, silhouetted or cropped so no face is readable.`
+  );
+}
+
 // ── Per-profile look + lead-in sentences ────────────────────────────
 interface ProfileSpec {
   /** "create ONE photorealistic … that <lead> …" */
@@ -267,6 +285,8 @@ export interface ComposeInput {
   refs: PromptRef[];
   described: PromptDescribed[];
   profile: Profile;
+  /** People with no verified likeness — they must stay out of the frame. */
+  unverified?: string[];
   /** Appended verbatim — the QC retry hint. */
   extra?: string;
 }
@@ -296,8 +316,12 @@ export function composePrompt(input: ComposeInput): string {
       ".\n\n";
   }
 
-  const peopleBlocks =
-    spec.people === "cast" ? [HANDS, BACKGROUND_PEOPLE] : spec.people === "none" ? [NO_PEOPLE] : [DISTANT_PEOPLE];
+  const unverified = input.unverified ?? [];
+  const peopleBlocks = unverified.length
+    ? [NO_PEOPLE, unverifiedClause(unverified)]
+    : spec.people === "cast" ? [HANDS, BACKGROUND_PEOPLE]
+    : spec.people === "none" ? [NO_PEOPLE]
+    : [DISTANT_PEOPLE];
 
   const clauses = [
     SINGLE_FRAME,
